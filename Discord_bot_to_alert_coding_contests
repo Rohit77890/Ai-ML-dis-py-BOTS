@@ -1,0 +1,84 @@
+const { Client, GatewayIntentBits } = require('discord.js');
+const axios = require('axios');
+const cheerio = require('cheerio');
+
+// Discord bot token (replace with your bot token)
+const DISCORD_TOKEN = 'YOUR_DISCORD_BOT_TOKEN';
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+
+let lastContest = null; // Store the last contest to avoid duplicate notifications
+
+// Function to scrape CodeChef contests
+async function fetchCodeChefContests() {
+    try {
+        const response = await axios.get('https://www.codechef.com/contests');
+        const html = response.data;
+        const $ = cheerio.load(html);
+
+        const upcomingContests = [];
+
+        // Scrape the "Future Contests" table
+        $('#future-contests-data tr').each((index, element) => {
+            const contestName = $(element).find('td:nth-child(2)').text().trim();
+            const startDate = $(element).find('td:nth-child(3)').text().trim();
+            const endDate = $(element).find('td:nth-child(4)').text().trim();
+
+            if (contestName) {
+                upcomingContests.push({
+                    name: contestName,
+                    start: startDate,
+                    end: endDate
+                });
+            }
+        });
+
+        return upcomingContests;
+    } catch (error) {
+        console.error('Error fetching contests:', error);
+        return [];
+    }
+}
+
+// Function to notify Discord about new contests
+async function notifyNewContest(channel) {
+    const contests = await fetchCodeChefContests();
+
+    if (contests.length === 0) {
+        console.log('No upcoming contests found.');
+        return;
+    }
+
+    const latestContest = contests[0];
+
+    // Check if the latest contest is new (i.e., not the same as last notified contest)
+    if (!lastContest || lastContest.name !== latestContest.name) {
+        lastContest = latestContest;
+
+        // Send a message to the Discord channel
+        channel.send(`📢 **New CodeChef Contest!**\n\n**${latestContest.name}**\n🗓 **Start:** ${latestContest.start}\n🗓 **End:** ${latestContest.end}\nCheck it out here: https://www.codechef.com/contests`);
+    } else {
+        console.log('No new contests since the last notification.');
+    }
+}
+
+// Event handler when bot is ready
+client.once('ready', () => {
+    console.log(`Logged in as ${client.user.tag}!`);
+    
+    // Find the channel to send notifications (replace with your channel ID)
+    const channel = client.channels.cache.get('YOUR_DISCORD_CHANNEL_ID');
+
+    if (!channel) {
+        console.error('Channel not found!');
+        return;
+    }
+
+    // Check for new contests every 30 minutes (1800000 milliseconds)
+    setInterval(() => notifyNewContest(channel), 1800000);
+
+    // Initial notification check when the bot starts
+    notifyNewContest(channel);
+});
+
+// Log in to Discord
+client.login(DISCORD_TOKEN);
